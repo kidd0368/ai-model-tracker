@@ -4,7 +4,7 @@
 用法: SITE_PASSWORD='...' python3 build.py
 輸出: index.html (加密殼頁) + data.enc (加密資料備份)
 """
-import json, os, sys, base64, html
+import json, os, sys, base64, html, math
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -137,6 +137,73 @@ def render_method():
     notes = "".join(f"<li>{esc(t)}</li>" for t in D["method"]["notes"])
     return f'<div class="card"><h3>資料來源</h3><p>{src}</p><h3>方法與免責</h3><ul>{notes}</ul></div>'
 
+def render_arr_chart():
+    A = D.get("arr_series")
+    if not A:
+        return ""
+    X0, X1, Y0, Y1 = 70, 940, 26, 380
+    def xp(dstr):
+        y, m = map(int, dstr.split("-"))
+        idx = (y - 2023) * 12 + (m - 7)  # 2023-07 -> 0 ... 2029-01 -> 66
+        return X0 + idx * ((X1 - X0) / 66.0)
+    LO, HI = math.log10(0.8), math.log10(3000)
+    def yp(v):
+        return Y1 - (math.log10(v) - LO) / (HI - LO) * (Y1 - Y0)
+    P = []
+    for gv, gl in [(1, "1億"), (10, "10億"), (100, "100億"), (1000, "1,000億")]:
+        gy = yp(gv)
+        P.append(f'<line x1="{X0}" y1="{gy:.1f}" x2="{X1}" y2="{gy:.1f}" stroke="#26314f" stroke-width="1"/>')
+        P.append(f'<text x="{X0-8}" y="{gy+4:.1f}" fill="#8fa0bf" font-size="12" text-anchor="end">{gl}</text>')
+    for yr in range(2024, 2029):
+        gx = xp(f"{yr}-01")
+        P.append(f'<line x1="{gx:.1f}" y1="{Y0}" x2="{gx:.1f}" y2="{Y1}" stroke="#1b2440" stroke-width="1"/>')
+        P.append(f'<text x="{gx:.1f}" y="{Y1+18}" fill="#8fa0bf" font-size="12" text-anchor="middle">{yr}</text>')
+    P.append(f'<line x1="{X0}" y1="{Y1}" x2="{X1}" y2="{Y1}" stroke="#3b4a6e" stroke-width="1.5"/>')
+    for c in A["companies"]:
+        col = c["color"]
+        pts = [(xp(p["d"]), yp(p["v"]), p) for p in c["points"]]
+        poly = " ".join(f"{x:.1f},{y:.1f}" for x, y, _ in pts)
+        P.append(f'<polyline points="{poly}" fill="none" stroke="{col}" stroke-width="2.5"/>')
+        for x, y, p in pts:
+            P.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.2" fill="{col}"><title>{esc(p["label"])}</title></circle>')
+        lx, ly, lp = pts[-1]
+        P.append(f'<text x="{lx-6:.1f}" y="{ly-12:.1f}" fill="{col}" font-size="13" font-weight="700" text-anchor="end">{esc(c["name"])} ${lp["v"]}億</text>')
+        for e in c.get("estimates", []):
+            ex, ey = xp(e["d"]), yp(e["v"])
+            P.append(f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="4.5" fill="#0b1020" stroke="{col}" stroke-width="2"><title>{esc(e["label"])}</title></circle>')
+        ests = c.get("estimates", [])
+        if ests:
+            top = max(ests, key=lambda e: e["v"])
+            P.append(f'<text x="{xp(top["d"])+9:.1f}" y="{yp(top["v"])+4:.1f}" fill="{col}" font-size="11.5" opacity="0.85">第三方估 ${int(top["v"])}億</text>')
+        for f_ in c.get("forecasts", []):
+            fx, fy = xp(f_["d"]), yp(f_["v"])
+            P.append(f'<line x1="{lx:.1f}" y1="{ly:.1f}" x2="{fx:.1f}" y2="{fy:.1f}" stroke="{col}" stroke-width="1.5" stroke-dasharray="6 5" opacity="0.5"/>')
+            P.append(f'<path d="M {fx:.1f} {fy-6:.1f} L {fx+6:.1f} {fy:.1f} L {fx:.1f} {fy+6:.1f} L {fx-6:.1f} {fy:.1f} Z" fill="#0b1020" stroke="{col}" stroke-width="2"><title>{esc(f_["label"])}</title></path>')
+            rng = f_.get("range") or str(f_["v"])
+            P.append(f'<text x="{fx+10:.1f}" y="{fy+4:.1f}" fill="{col}" font-size="11.5">預測 ${esc(rng)}億</text>')
+    P.append(f'<circle cx="90" cy="{Y0+10}" r="4.2" fill="#8fa0bf"/><text x="100" y="{Y0+14}" fill="#8fa0bf" font-size="12">官方／報導年化</text>')
+    P.append(f'<circle cx="215" cy="{Y0+10}" r="4.5" fill="#0b1020" stroke="#8fa0bf" stroke-width="2"/><text x="225" y="{Y0+14}" fill="#8fa0bf" font-size="12">第三方估算</text>')
+    P.append(f'<path d="M 320 {Y0+4} L 326 {Y0+10} L 320 {Y0+16} L 314 {Y0+10} Z" fill="#0b1020" stroke="#8fa0bf" stroke-width="2"/><text x="334" y="{Y0+14}" fill="#8fa0bf" font-size="12">前瞻預測（假設 ARR）</text>')
+    return '<svg viewBox="0 0 980 408" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">' + "".join(P) + "</svg>"
+
+def render_arr_bars():
+    A = D.get("arr_series")
+    if not A or not A.get("latest_bars"):
+        return ""
+    rows = A["latest_bars"]
+    LO, HI = math.log10(0.5), math.log10(900)
+    def bw(v):
+        return max(6.0, (math.log10(v) - LO) / (HI - LO) * 610)
+    P = []
+    y = 8
+    for r in rows:
+        w = bw(r["v"])
+        P.append(f'<text x="142" y="{y+15}" fill="#dbe4f5" font-size="13" text-anchor="end">{esc(r["name"])}</text>')
+        P.append(f'<rect x="150" y="{y}" width="{w:.1f}" height="21" rx="4" fill="{r["color"]}" opacity="0.88"><title>{esc(r["name"])}: ${r["v"]}億（{esc(r["note"])}）</title></rect>')
+        P.append(f'<text x="{150+w+8:.1f}" y="{y+15}" fill="#8fa0bf" font-size="12">${r["v"]}億｜{esc(r["note"])}</text>')
+        y += 31
+    return f'<svg viewBox="0 0 980 {y+6}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">' + "".join(P) + "</svg>"
+
 analysis = "".join(f"<p>{esc(p)}</p>" for p in D["analysis"]["paragraphs"])
 
 CONTENT = f"""<!DOCTYPE html>
@@ -188,12 +255,16 @@ footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 
   <div class="updated">最後更新：{esc(D["meta"]["updated"])}</div>
 </header>
 <nav>
-  <a href="#analysis">總評</a><a href="#log">每日動態</a><a href="#cost">任務成本</a>
+  <a href="#analysis">總評</a><a href="#arrchart">ARR 圖表</a><a href="#log">每日動態</a><a href="#cost">任務成本</a>
   <a href="#revenue">營收獲利</a><a href="#compute">算力架構</a><a href="#contracts">算力合約</a>
   <a href="#interconnect">互連架構</a><a href="#method">方法說明</a>
 </nav>
 <main>
 <section id="analysis"><h2>{esc(D["analysis"]["headline"])}</h2><div class="analysis">{analysis}</div></section>
+<section id="arrchart"><h2>ARR 走勢圖（單位：億美元，對數刻度）</h2>
+<div class="card"><h3>OpenAI vs Anthropic：年化營收軌跡與前瞻預測</h3><p class="desc">{esc(D["arr_series"]["note"]) if D.get("arr_series") else ""}</p>{render_arr_chart()}</div>
+<div class="card"><h3>各公司最新 ARR 一覽</h3>{render_arr_bars()}<p class="desc">{esc(D["arr_series"]["bars_note"]) if D.get("arr_series") else ""}</p></div>
+</section>
 <section id="log"><h2>每日動態</h2>{render_daily_log()}</section>
 <section id="cost"><h2>任務成本比較</h2>{render_cost()}</section>
 <section id="revenue"><h2>營收與獲利能力</h2>{render_revenue()}</section>

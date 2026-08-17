@@ -4,8 +4,8 @@
 
 The collector is intentionally fail-closed: it validates source coverage before
 touching data.json, never fetches article bodies, and only appends events whose
-URLs came from the configured official feeds. GitHub Models is optional; a
-deterministic classifier is used when inference is unavailable.
+URLs came from the configured official feeds. OpenAI-compatible enrichment is
+optional; a deterministic classifier is used when inference is unavailable.
 """
 
 from __future__ import annotations
@@ -325,7 +325,7 @@ def parse_model_json(raw: str) -> dict[str, Any]:
     return value
 
 
-def github_models_items(
+def openai_compatible_items(
     candidates: list[dict[str, Any]], token: str, model: str, endpoint: str, limit: int
 ) -> list[dict[str, Any]]:
     prompt_candidates = [
@@ -426,16 +426,35 @@ def github_models_items(
 def enrich(candidates: list[dict[str, Any]], limit: int) -> tuple[list[dict[str, Any]], str]:
     if not candidates:
         return [], "not-needed"
-    token = os.environ.get("GITHUB_MODELS_TOKEN", "").strip()
-    if not token:
+
+    setting_names = (
+        "AI_ENRICHMENT_TOKEN",
+        "AI_ENRICHMENT_ENDPOINT",
+        "AI_ENRICHMENT_MODEL",
+    )
+    settings = {name: os.environ.get(name, "").strip() for name in setting_names}
+    configured = [name for name, value in settings.items() if value]
+    if not configured:
         return deterministic_items(candidates, limit), "deterministic"
-    model = os.environ.get("GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini").strip()
-    endpoint = os.environ.get("GITHUB_MODELS_ENDPOINT", "https://models.github.ai/inference").strip()
+    if len(configured) != len(setting_names):
+        missing = ", ".join(name for name in setting_names if not settings[name])
+        print(
+            "WARN: AI enrichment configuration is incomplete "
+            f"(missing {missing}); using deterministic summaries"
+        )
+        return deterministic_items(candidates, limit), "deterministic-fallback"
+
+    token = settings["AI_ENRICHMENT_TOKEN"]
+    endpoint = settings["AI_ENRICHMENT_ENDPOINT"]
+    model = settings["AI_ENRICHMENT_MODEL"]
     try:
-        items = github_models_items(candidates, token, model, endpoint, limit)
-        return items, f"github-models:{model}"
+        items = openai_compatible_items(candidates, token, model, endpoint, limit)
+        return items, f"api:{model}"
     except (KeyError, TypeError, ValueError, UpdateError, OSError) as exc:
-        print(f"WARN: GitHub Models enrichment unavailable ({type(exc).__name__}); using deterministic summaries")
+        print(
+            "WARN: AI enrichment API unavailable "
+            f"({type(exc).__name__}); using deterministic summaries"
+        )
     return deterministic_items(candidates, limit), "deterministic-fallback"
 
 

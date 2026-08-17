@@ -60,7 +60,12 @@ class UpdateTests(unittest.TestCase):
 
     def test_update_is_additive_source_backed_and_deduplicated(self) -> None:
         with mock.patch("update.fetch_bytes", return_value=RSS), mock.patch.dict(
-            os.environ, {"GITHUB_MODELS_TOKEN": ""}
+            os.environ,
+            {
+                "AI_ENRICHMENT_TOKEN": "",
+                "AI_ENRICHMENT_ENDPOINT": "",
+                "AI_ENRICHMENT_MODEL": "",
+            },
         ):
             first = update.run(self.data_path, self.config_path, now=NOW)
             second = update.run(self.data_path, self.config_path, now=NOW)
@@ -120,7 +125,7 @@ class UpdateTests(unittest.TestCase):
         )
         self.assertEqual("https://example.com/news/item?id=7", value)
 
-    def test_github_models_empty_selection_is_success(self) -> None:
+    def test_enrichment_api_empty_selection_is_success(self) -> None:
         candidates = [
             {
                 "url": "https://example.org/routine-update",
@@ -133,15 +138,25 @@ class UpdateTests(unittest.TestCase):
         ]
         with mock.patch.dict(
             os.environ,
-            {"GITHUB_MODELS_TOKEN": "test-token", "GITHUB_MODELS_MODEL": "test/model"},
-        ), mock.patch("update.github_models_items", return_value=[]) as model_items:
+            {
+                "AI_ENRICHMENT_TOKEN": "test-token",
+                "AI_ENRICHMENT_ENDPOINT": "https://api.example.test/v1/",
+                "AI_ENRICHMENT_MODEL": "test/model",
+            },
+        ), mock.patch("update.openai_compatible_items", return_value=[]) as api_items:
             items, enrichment = update.enrich(candidates, limit=5)
 
         self.assertEqual([], items)
-        self.assertEqual("github-models:test/model", enrichment)
-        model_items.assert_called_once()
+        self.assertEqual("api:test/model", enrichment)
+        api_items.assert_called_once_with(
+            candidates,
+            "test-token",
+            "test/model",
+            "https://api.example.test/v1/",
+            5,
+        )
 
-    def test_github_models_malformed_response_falls_back(self) -> None:
+    def test_enrichment_api_partial_configuration_falls_back(self) -> None:
         candidates = [
             {
                 "url": "https://example.org/model-release",
@@ -152,15 +167,54 @@ class UpdateTests(unittest.TestCase):
                 "default_category": "模型",
             }
         ]
-        with mock.patch.dict(os.environ, {"GITHUB_MODELS_TOKEN": "test-token"}), mock.patch(
-            "update.urllib.request.urlopen"
-        ), mock.patch("update.json.load", return_value={"choices": []}):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "AI_ENRICHMENT_TOKEN": "test-token",
+                "AI_ENRICHMENT_ENDPOINT": "",
+                "AI_ENRICHMENT_MODEL": "test/model",
+            },
+        ), mock.patch("builtins.print") as warning, mock.patch(
+            "update.openai_compatible_items"
+        ) as api_items:
             items, enrichment = update.enrich(candidates, limit=5)
 
         self.assertEqual("deterministic-fallback", enrichment)
         self.assertEqual(["https://example.org/model-release"], [item["url"] for item in items])
+        api_items.assert_not_called()
+        self.assertIn("AI_ENRICHMENT_ENDPOINT", warning.call_args.args[0])
 
-    def test_github_models_transport_errors_fall_back(self) -> None:
+    def test_enrichment_api_malformed_response_falls_back(self) -> None:
+        candidates = [
+            {
+                "url": "https://example.org/model-release",
+                "source": "Official Feed",
+                "title": "New model release",
+                "summary": "Official model announcement.",
+                "published": "2026-08-18T00:00:00+00:00",
+                "default_category": "模型",
+            }
+        ]
+        with mock.patch.dict(
+            os.environ,
+            {
+                "AI_ENRICHMENT_TOKEN": "test-token",
+                "AI_ENRICHMENT_ENDPOINT": "https://api.example.test/v1",
+                "AI_ENRICHMENT_MODEL": "test/model",
+            },
+        ), mock.patch("update.urllib.request.urlopen") as urlopen, mock.patch(
+            "update.json.load", return_value={"choices": []}
+        ):
+            items, enrichment = update.enrich(candidates, limit=5)
+
+        self.assertEqual("deterministic-fallback", enrichment)
+        self.assertEqual(["https://example.org/model-release"], [item["url"] for item in items])
+        request = urlopen.call_args.args[0]
+        self.assertEqual("https://api.example.test/v1/chat/completions", request.full_url)
+        self.assertEqual("Bearer test-token", request.get_header("Authorization"))
+        self.assertEqual("test/model", json.loads(request.data)["model"])
+
+    def test_enrichment_api_transport_errors_fall_back(self) -> None:
         candidates = [
             {
                 "url": "https://example.org/model-release",
@@ -173,8 +227,13 @@ class UpdateTests(unittest.TestCase):
         ]
         for error in (TimeoutError("timed out"), OSError("connection reset")):
             with self.subTest(error=type(error).__name__), mock.patch.dict(
-                os.environ, {"GITHUB_MODELS_TOKEN": "test-token"}
-            ), mock.patch("update.github_models_items", side_effect=error):
+                os.environ,
+                {
+                    "AI_ENRICHMENT_TOKEN": "test-token",
+                    "AI_ENRICHMENT_ENDPOINT": "https://api.example.test/v1",
+                    "AI_ENRICHMENT_MODEL": "test/model",
+                },
+            ), mock.patch("update.openai_compatible_items", side_effect=error):
                 items, enrichment = update.enrich(candidates, limit=5)
 
             self.assertEqual("deterministic-fallback", enrichment)

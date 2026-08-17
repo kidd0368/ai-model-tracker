@@ -19,18 +19,34 @@ class WorkflowContractTests(unittest.TestCase):
 
     def test_secret_and_minimum_job_permissions_are_explicit(self) -> None:
         secret_binding = "SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}"
-        model_token_binding = "GITHUB_MODELS_TOKEN: ${{ github.token }}"
-        model_name_binding = "GITHUB_MODELS_MODEL: ${{ vars.AI_RESEARCH_MODEL || 'openai/gpt-4.1-mini' }}"
+        enrichment_token_binding = "AI_ENRICHMENT_TOKEN: ${{ secrets.AI_ENRICHMENT_TOKEN }}"
+        enrichment_endpoint_binding = "AI_ENRICHMENT_ENDPOINT: ${{ vars.AI_ENRICHMENT_ENDPOINT }}"
+        enrichment_model_binding = "AI_ENRICHMENT_MODEL: ${{ vars.AI_ENRICHMENT_MODEL }}"
         self.assertEqual(self.text.count(secret_binding), 4)
-        self.assertEqual(self.text.count(model_token_binding), 2)
-        self.assertEqual(self.text.count(model_name_binding), 2)
+        self.assertEqual(self.text.count(enrichment_token_binding), 2)
+        self.assertEqual(self.text.count(enrichment_endpoint_binding), 2)
+        self.assertEqual(self.text.count(enrichment_model_binding), 2)
         update_job = self.text.split("\n  update:\n", 1)[1]
         update_job_preamble = update_job.split("\n    steps:\n", 1)[0]
         self.assertNotIn(secret_binding, update_job_preamble)
-        self.assertNotIn(model_token_binding, update_job_preamble)
-        self.assertNotIn(model_name_binding, update_job_preamble)
+        self.assertNotIn(enrichment_token_binding, update_job_preamble)
+        self.assertNotIn(enrichment_endpoint_binding, update_job_preamble)
+        self.assertNotIn(enrichment_model_binding, update_job_preamble)
+        dry_run_step = self.text.split("      - name: Collect official sources (dry run)\n", 1)[1].split(
+            "\n      - name:", 1
+        )[0]
+        update_step = self.text.split("      - name: Collect and apply official sources\n", 1)[1].split(
+            "\n      - name:", 1
+        )[0]
+        for step in (dry_run_step, update_step):
+            self.assertIn(enrichment_token_binding, step)
+            self.assertIn(enrichment_endpoint_binding, step)
+            self.assertIn(enrichment_model_binding, step)
+            self.assertIn("run: python update.py", step)
         self.assertIn("contents: write", self.text)
-        self.assertIn("models: read", self.text)
+        self.assertNotIn("models: read", self.text)
+        self.assertNotIn("GITHUB_MODELS", self.text)
+        self.assertNotIn("AI_RESEARCH_MODEL", self.text)
         self.assertIn("pages: write", self.text)
         self.assertIn("id-token: write", self.text)
 

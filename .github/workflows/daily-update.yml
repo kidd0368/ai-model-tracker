@@ -66,7 +66,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: write
-      models: read
     steps:
       - name: Check out the triggering main commit
         uses: actions/checkout@v6
@@ -101,15 +100,17 @@ jobs:
       - name: Collect official sources (dry run)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
         env:
-          GITHUB_MODELS_TOKEN: ${{ github.token }}
-          GITHUB_MODELS_MODEL: ${{ vars.AI_RESEARCH_MODEL || 'openai/gpt-4.1-mini' }}
+          AI_ENRICHMENT_TOKEN: ${{ secrets.AI_ENRICHMENT_TOKEN }}
+          AI_ENRICHMENT_ENDPOINT: ${{ vars.AI_ENRICHMENT_ENDPOINT }}
+          AI_ENRICHMENT_MODEL: ${{ vars.AI_ENRICHMENT_MODEL }}
         run: python update.py --dry-run
 
       - name: Collect and apply official sources
         if: ${{ github.event_name == 'schedule' || inputs.mode == 'update' }}
         env:
-          GITHUB_MODELS_TOKEN: ${{ github.token }}
-          GITHUB_MODELS_MODEL: ${{ vars.AI_RESEARCH_MODEL || 'openai/gpt-4.1-mini' }}
+          AI_ENRICHMENT_TOKEN: ${{ secrets.AI_ENRICHMENT_TOKEN }}
+          AI_ENRICHMENT_ENDPOINT: ${{ vars.AI_ENRICHMENT_ENDPOINT }}
+          AI_ENRICHMENT_MODEL: ${{ vars.AI_ENRICHMENT_MODEL }}
         run: python update.py
 
       - name: Rebuild encrypted outputs

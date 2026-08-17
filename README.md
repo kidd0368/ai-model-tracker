@@ -9,7 +9,7 @@
 1. 以 Actions Secret `SITE_PASSWORD` 解密現有 `data.enc`。
 2. 驗證完整資料 schema；解密或驗證失敗便停止。
 3. 讀取 `sources.json` 中的官方 RSS、Atom 與 sitemap，重掃最近 14 天並依 URL／標題去重。
-4. 優先用 GitHub Models 將公開候選事件篩選、分類及改寫為繁體中文；模型不可用時自動退回確定性摘要。
+4. 預設以不需要外部 AI 金鑰的確定性規則篩選、分類及產生摘要；若完整設定選用的 OpenAI-compatible enrichment endpoint，才會交由該服務強化內容，服務不可用時仍自動退回確定性摘要。
 5. 新事件加入 `daily_log`，並以含來源連結的 `section_updates` 顯示在確實受影響的總評、成本、營收、算力、合約或互連區塊。既有表格、歷史與未知欄位不會被重建或刪除。
 6. 更新成功後執行 schema 驗證、`build.py`、雙密文 round-trip 驗證。
 7. 只允許 stage `data.enc` 與 `index.html`，再由 `github-actions[bot]` commit/push，並記錄成功推送的精確 commit SHA。
@@ -31,15 +31,19 @@ Secret 只能新增／覆寫，GitHub 不會顯示既有值。本專案不需要
 
 若要更換網站密碼，必須先用舊密碼成功解密，再用新密碼重建 `data.enc` 與 `index.html`，驗證後才同步更新 `SITE_PASSWORD`。不可只改 Secret，否則下一輪無法解密。
 
-### 2. Actions Variable（選填）
+### 2. AI enrichment（完全選填）
 
-可在 **Settings → Secrets and variables → Actions → Variables** 建立：
+預設的確定性流程不需要任何外部 AI 金鑰。若希望使用 OpenAI-compatible `chat/completions` 服務強化事件篩選與繁體中文摘要，必須同時建立以下三項設定；少任何一項都不會呼叫外部服務，而會安全退回確定性流程：
 
-| 名稱 | 預設值 | 說明 |
+| 名稱 | 類型 | 說明 |
 |---|---|---|
-| `AI_RESEARCH_MODEL` | `openai/gpt-4.1-mini` | GitHub Models catalog 中可用的模型 ID。 |
+| `AI_ENRICHMENT_TOKEN` | Actions Secret | 選用服務的 Bearer token。 |
+| `AI_ENRICHMENT_ENDPOINT` | Actions Variable | 相容 API 的 base endpoint；程式會呼叫其 `/chat/completions`。 |
+| `AI_ENRICHMENT_MODEL` | Actions Variable | 該服務所接受的模型 ID。 |
 
-GitHub Models 使用工作當次的 `GITHUB_TOKEN` 與 `models: read`，不會收到 `SITE_PASSWORD`。若推論服務失敗，來源蒐集仍會採確定性分類，沒有額外 API key 單點故障。
+`AI_ENRICHMENT_TOKEN` 只注入兩個執行 `update.py` 的 step；不會提供給 checkout、安裝、解密、build、commit 或部署步驟，也不會收到 `SITE_PASSWORD`。
+
+[GitHub Models 已在 2026-07-30 完全退役](https://docs.github.com/en/github-models)，原本的推論端點及 `models: read` 權限不再適合作為長期自動化依賴，因此本專案不再使用 `GITHUB_TOKEN` 呼叫 GitHub Models，也不提供其舊設定。供應商中立的選填設定可替換服務而不改 workflow；未設定時，每日更新仍可完整運作。
 
 ### 3. GitHub Pages（必填一次）
 
@@ -113,7 +117,7 @@ Remove-Item Env:SITE_PASSWORD
 主要檔案：
 
 - `sources.json`：官方來源、健康門檻、回看期間與優先級。
-- `update.py`：來源擷取、正規化、去重、AI／確定性分類及 additive update。
+- `update.py`：來源擷取、正規化、去重、選用的相容 AI enrichment／確定性分類及 additive update。
 - `validate_data.py`：既有 schema 與新增自動更新欄位的 fail-closed 驗證。
 - `decrypt.py`：`data.enc` → ignored `data.json`。
 - `build.py`：`data.json` → 加密的 `index.html` 與 `data.enc`。

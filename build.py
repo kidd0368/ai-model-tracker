@@ -4,10 +4,11 @@
 用法: SITE_PASSWORD='...' python3 build.py
 輸出: index.html (加密殼頁) + data.enc (加密資料備份)
 """
-import json, os, sys, base64, html, math
+import json, os, sys, base64, html, math, tempfile
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
+from validate_data import validate_or_raise
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PASSWORD = os.environ.get("SITE_PASSWORD") or (sys.argv[1] if len(sys.argv) > 1 else None)
@@ -33,6 +34,7 @@ def encrypt(plaintext: bytes) -> dict:
 
 with open(os.path.join(ROOT, "data.json"), encoding="utf-8") as f:
     D = json.load(f)
+validate_or_raise(D)
 
 # ---------- 渲染內容頁 ----------
 def render_daily_log():
@@ -46,6 +48,25 @@ def render_daily_log():
         )
         out.append(f'<div class="card"><h3>{esc(day["date"])}｜{esc(day["title"])}</h3><ul class="log">{items}</ul></div>')
     return "".join(out)
+
+def render_section_updates(section):
+    events = D.get("section_updates", {}).get(section, [])
+    if not events:
+        return ""
+    items = []
+    for event in events[:20]:
+        link = ""
+        if event.get("url"):
+            link = (
+                f' <a href="{html.escape(event["url"], quote=True)}" '
+                'target="_blank" rel="noopener">來源↗</a>'
+            )
+        source = f'｜{esc(event["source"])}' if event.get("source") else ""
+        items.append(
+            f'<li><span class="tag">{esc(event.get("cat", "產業"))}</span> '
+            f'{esc(event["text"])}{link}<small>{esc(event.get("date", ""))}{source}</small></li>'
+        )
+    return '<div class="card auto-update"><h3>最新自動更新</h3><ul class="log">' + "".join(items) + "</ul></div>"
 
 def table(headers, rows_html):
     th = "".join(f"<th>{esc(h)}</th>" for h in headers)
@@ -244,6 +265,7 @@ tr:hover td {{ background:rgba(94,234,212,.045); }}
 .tag {{ display:inline-block; background:var(--tag); color:var(--accent); border-radius:6px;
   padding:1px 8px; font-size:12px; margin-right:6px; }}
 ul.log {{ padding-left:18px; }} ul.log li {{ margin:7px 0; }}
+.auto-update small {{ display:block; color:var(--muted); margin:2px 0 0 2px; font-size:11.5px; }}
 .analysis p {{ background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--accent);
   border-radius:12px; padding:14px 18px; }}
 footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 16px; border-top:1px solid var(--line); }}
@@ -253,6 +275,7 @@ footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 
   <h1>{esc(D["meta"]["title"])}</h1>
   <p>{esc(D["meta"]["subtitle"])}</p>
   <div class="updated">最後更新：{esc(D["meta"]["updated"])}</div>
+  <div class="updated">最後巡檢：{esc(D["meta"].get("last_checked", D["meta"]["updated"]))}</div>
 </header>
 <nav>
   <a href="#analysis">總評</a><a href="#arrchart">ARR 圖表</a><a href="#log">每日動態</a><a href="#cost">任務成本</a>
@@ -260,17 +283,18 @@ footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 
   <a href="#interconnect">互連架構</a><a href="#method">方法說明</a>
 </nav>
 <main>
-<section id="analysis"><h2>{esc(D["analysis"]["headline"])}</h2><div class="analysis">{analysis}</div></section>
+<section id="analysis"><h2>{esc(D["analysis"]["headline"])}</h2><div class="analysis">{analysis}</div>{render_section_updates("analysis")}</section>
 <section id="arrchart"><h2>ARR 走勢圖（單位：億美元，對數刻度）</h2>
 <div class="card"><h3>OpenAI vs Anthropic：年化營收軌跡與前瞻預測</h3><p class="desc">{esc(D["arr_series"]["note"]) if D.get("arr_series") else ""}</p>{render_arr_chart()}</div>
 <div class="card"><h3>各公司最新 ARR 一覽</h3>{render_arr_bars()}<p class="desc">{esc(D["arr_series"]["bars_note"]) if D.get("arr_series") else ""}</p></div>
+{render_section_updates("arrchart")}
 </section>
 <section id="log"><h2>每日動態</h2>{render_daily_log()}</section>
-<section id="cost"><h2>任務成本比較</h2>{render_cost()}</section>
-<section id="revenue"><h2>營收與獲利能力</h2>{render_revenue()}</section>
-<section id="compute"><h2>算力架構（訓練×推論×來源比重）</h2>{render_compute()}</section>
-<section id="contracts"><h2>算力與基建合約</h2>{render_contracts()}</section>
-<section id="interconnect"><h2>互連架構</h2>{render_interconnect()}</section>
+<section id="cost"><h2>任務成本比較</h2>{render_cost()}{render_section_updates("cost")}</section>
+<section id="revenue"><h2>營收與獲利能力</h2>{render_revenue()}{render_section_updates("revenue")}</section>
+<section id="compute"><h2>算力架構（訓練×推論×來源比重）</h2>{render_compute()}{render_section_updates("compute")}</section>
+<section id="contracts"><h2>算力與基建合約</h2>{render_contracts()}{render_section_updates("contracts")}</section>
+<section id="interconnect"><h2>互連架構</h2>{render_interconnect()}{render_section_updates("interconnect")}</section>
 <section id="method"><h2>方法說明</h2>{render_method()}</section>
 </main>
 <footer>AI 模型情報站｜每日 07:00（台北）自動更新｜本站為公開資訊彙整，非投資建議</footer>
@@ -279,9 +303,6 @@ footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 
 # ---------- 加密並輸出 ----------
 enc_page = encrypt(CONTENT.encode("utf-8"))
 enc_data = encrypt(json.dumps(D, ensure_ascii=False).encode("utf-8"))
-
-with open(os.path.join(ROOT, "data.enc"), "w", encoding="utf-8") as f:
-    json.dump(enc_data, f)
 
 SHELL = """<!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
@@ -342,8 +363,31 @@ document.getElementById("pw").addEventListener("keydown", e => { if (e.key === "
 </script></body></html>"""
 
 shell = SHELL.replace("__PAYLOAD__", json.dumps(enc_page))
-with open(os.path.join(ROOT, "index.html"), "w", encoding="utf-8") as f:
-    f.write(shell)
+
+def write_output_pair(outputs):
+    """Write both generated files only after every payload is ready."""
+    temporary = []
+    try:
+        for path, content in outputs:
+            fd, tmp = tempfile.mkstemp(prefix=f".{os.path.basename(path)}.", suffix=".tmp", dir=ROOT)
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            temporary.append((tmp, path))
+        for tmp, path in temporary:
+            os.replace(tmp, path)
+    finally:
+        for tmp, _ in temporary:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+
+write_output_pair([
+    (os.path.join(ROOT, "data.enc"), json.dumps(enc_data)),
+    (os.path.join(ROOT, "index.html"), shell),
+])
 
 print("OK: index.html (%d bytes), data.enc (%d bytes)" % (
     os.path.getsize(os.path.join(ROOT, "index.html")),

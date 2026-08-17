@@ -1,0 +1,226 @@
+name: Daily AI tracker update and Pages deploy
+
+on:
+  schedule:
+    - cron: "0 7 * * *"
+      timezone: "Asia/Taipei"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Run a real update, a source-only dry run, or deploy the current site only
+        required: true
+        default: update
+        type: choice
+        options:
+          - update
+          - dry-run
+          - deploy-only
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ai-model-tracker-pr-{0}', github.event.pull_request.number) || 'ai-model-tracker-production' }}
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install locked dependencies
+        run: python -m pip install --disable-pip-version-check --requirement requirements.txt
+
+      - name: Run validation tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Compile automation scripts
+        run: python -m py_compile build.py decrypt.py update.py validate_data.py verify_build.py
+
+  update:
+    needs:
+      - quality
+    outputs:
+      deployed_sha: ${{ steps.deployment_source.outputs.sha }}
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (
+        github.event_name == 'schedule' ||
+        (github.event_name == 'workflow_dispatch' && inputs.mode != 'deploy-only')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      models: read
+    steps:
+      - name: Check out the triggering main commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install locked dependencies
+        run: python -m pip install --disable-pip-version-check --requirement requirements.txt
+
+      - name: Require the encryption secret
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        shell: bash
+        run: |
+          if [[ -z "${SITE_PASSWORD:-}" ]]; then
+            echo "::error::Missing Actions secret SITE_PASSWORD. See README.md."
+            exit 1
+          fi
+
+      - name: Decrypt and validate current data
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: python decrypt.py
+
+      - name: Collect official sources (dry run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
+        env:
+          GITHUB_MODELS_TOKEN: ${{ github.token }}
+          GITHUB_MODELS_MODEL: ${{ vars.AI_RESEARCH_MODEL || 'openai/gpt-4.1-mini' }}
+        run: python update.py --dry-run
+
+      - name: Collect and apply official sources
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'update' }}
+        env:
+          GITHUB_MODELS_TOKEN: ${{ github.token }}
+          GITHUB_MODELS_MODEL: ${{ vars.AI_RESEARCH_MODEL || 'openai/gpt-4.1-mini' }}
+        run: python update.py
+
+      - name: Rebuild encrypted outputs
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'update' }}
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: python build.py
+
+      - name: Verify both encrypted outputs
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'update' }}
+        env:
+          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+        run: python verify_build.py
+
+      - name: Commit only the encrypted site pair
+        if: ${{ github.event_name == 'schedule' || inputs.mode == 'update' }}
+        shell: bash
+        run: |
+          if git ls-files --error-unmatch data.json >/dev/null 2>&1; then
+            echo "::error::data.json must never be tracked"
+            exit 1
+          fi
+
+          git add -- data.enc index.html
+          unexpected="$(git diff --cached --name-only | grep -Ev '^(data\.enc|index\.html)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::Unexpected staged files: $unexpected"
+            exit 1
+          fi
+
+          if git diff --cached --quiet; then
+            echo "No encrypted output changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(data): daily AI tracker update $(TZ=Asia/Taipei date +%F)"
+          git push origin HEAD:main
+
+      - name: Remove plaintext working data
+        if: always()
+        shell: bash
+        run: rm -f -- data.json
+
+      - name: Record the verified deployment commit
+        id: deployment_source
+        if: ${{ success() && (github.event_name == 'schedule' || inputs.mode == 'update') }}
+        shell: bash
+        run: |
+          deployed_sha="$(git rev-parse --verify 'HEAD^{commit}')"
+          echo "sha=$deployed_sha" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs:
+      - quality
+      - update
+    if: >-
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.quality.result == 'success' &&
+      (
+        github.event_name == 'push' ||
+        (github.event_name == 'workflow_dispatch' && inputs.mode == 'deploy-only') ||
+        (
+          needs.update.result == 'success' &&
+          needs.update.outputs.deployed_sha != '' &&
+          (github.event_name != 'workflow_dispatch' || inputs.mode != 'dry-run')
+        )
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out the verified deployment commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.update.outputs.deployed_sha || github.sha }}
+
+      - name: Prepare the public artifact
+        shell: bash
+        run: |
+          site_dir="$RUNNER_TEMP/ai-model-tracker-site"
+          if [[ -e "$site_dir" ]]; then
+            echo "::error::Pages artifact directory was not fresh: $site_dir"
+            exit 1
+          fi
+
+          mkdir -- "$site_dir"
+          cp -- index.html "$site_dir/index.html"
+
+          mapfile -t artifact_entries < <(find "$site_dir" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+          if [[ "${#artifact_entries[@]}" -ne 1 || "${artifact_entries[0]}" != "index.html" ]]; then
+            printf '::error::Unexpected Pages artifact entries: %s\n' "${artifact_entries[*]:-<none>}"
+            exit 1
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the public artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/ai-model-tracker-site
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

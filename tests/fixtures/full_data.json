@@ -1,0 +1,205 @@
+{
+  "meta": {
+    "title": "Synthetic AI 模型情報站 <QA>",
+    "subtitle": "完整且不含真實商業資料的測試資料",
+    "updated": "2099-12-31 07:00（台北）",
+    "version": 42,
+    "future_meta_field": {
+      "preserve": true
+    }
+  },
+  "analysis": {
+    "headline": "Synthetic 總評 & 驗證",
+    "paragraphs": [
+      "這是一段只供自動測試使用的完整總評。"
+    ]
+  },
+  "daily_log": [
+    {
+      "date": "2099-12-31",
+      "title": "Synthetic 每日巡檢",
+      "items": [
+        {
+          "cat": "模型",
+          "text": "Example Labs 發布 Synthetic Model。",
+          "url": "https://example.com/news/model"
+        }
+      ]
+    }
+  ],
+  "cost": {
+    "intro": "Synthetic 任務成本比較說明。",
+    "alphasense": {
+      "desc": "Synthetic AlphaSense 測試說明。",
+      "rows": [
+        {
+          "model": "Synthetic Model A",
+          "maker": "Example Labs",
+          "type": "推理",
+          "quality": "91.2",
+          "cost": "US$0.04／題"
+        }
+      ]
+    },
+    "aa": {
+      "desc": "Synthetic Artificial Analysis 測試說明。",
+      "rows": [
+        {
+          "model": "Synthetic Model B",
+          "ii": "50",
+          "cost": "US$0.08／任務"
+        }
+      ]
+    },
+    "pricing": [
+      {
+        "model": "Synthetic API",
+        "input": "US$1.00",
+        "output": "US$4.00",
+        "note": "純測試價格"
+      }
+    ],
+    "insights": [
+      "Synthetic 洞察：品質與成本需一併評估。"
+    ]
+  },
+  "revenue": {
+    "rows": [
+      {
+        "company": "Example AI",
+        "arr": "US$12 億",
+        "growth": "年增 100%（synthetic）",
+        "profit": "未提供",
+        "valuation": "US$120 億",
+        "mix": "API 與訂閱"
+      }
+    ],
+    "gemini_note": "Synthetic 說明：此處不代表任何真實公司資料。",
+    "observations": [
+      "Synthetic 觀察：所有數字均為測試值。"
+    ]
+  },
+  "compute": {
+    "cards": [
+      {
+        "company": "Example Compute",
+        "training": "Synthetic GPU 叢集",
+        "inference": "Synthetic ASIC 與 GPU",
+        "mix": "自建 50%／雲端 50%",
+        "asic": "Example TPU"
+      }
+    ],
+    "china_note": "Synthetic 中國算力研判文字。"
+  },
+  "contracts": {
+    "rows": [
+      {
+        "date": "2099-12-30",
+        "buyer": "Example Buyer",
+        "partner": "Example Partner",
+        "desc": "Synthetic 算力容量合約",
+        "size": "1 GW（測試）",
+        "status": "已公告"
+      }
+    ]
+  },
+  "interconnect": {
+    "intro": "Synthetic 互連架構說明。",
+    "camps": [
+      {
+        "camp": "ExampleLink",
+        "leader": "Example Consortium",
+        "scaleup": "Example Scale-up",
+        "scaleout": "Example Ethernet",
+        "deploy": "Synthetic Cluster",
+        "status": "測試中"
+      }
+    ],
+    "cluster_choices": [
+      {
+        "cluster": "Synthetic Supercluster",
+        "choice": "Example Fabric",
+        "detail": "800G synthetic topology"
+      }
+    ],
+    "updates": [
+      "Synthetic 最新互連動態。"
+    ]
+  },
+  "method": {
+    "sources": [
+      "Example Labs 官方公告"
+    ],
+    "notes": [
+      "Synthetic fixture 僅用於測試，不可作為事實來源。"
+    ]
+  },
+  "arr_series": {
+    "note": "Synthetic ARR 數列，單位為億美元。",
+    "bars_note": "Synthetic 長條圖僅驗證渲染與加密。",
+    "companies": [
+      {
+        "name": "Example AI",
+        "color": "#5eead4",
+        "points": [
+          {
+            "d": "2024-01",
+            "v": 1.5,
+            "label": "2024-01 Synthetic 官方 ARR 1.5 億"
+          },
+          {
+            "d": "2025-06",
+            "v": 12,
+            "label": "2025-06 Synthetic 官方 ARR 12 億"
+          }
+        ],
+        "estimates": [
+          {
+            "d": "2026-01",
+            "v": 20,
+            "label": "2026-01 Synthetic 第三方估算 20 億"
+          }
+        ],
+        "forecasts": [
+          {
+            "d": "2028-01",
+            "v": 80,
+            "range": "70–90",
+            "label": "2028-01 Synthetic 前瞻預測 80 億"
+          }
+        ],
+        "future_company_field": "must survive"
+      }
+    ],
+    "latest_bars": [
+      {
+        "name": "Example AI",
+        "v": 12,
+        "color": "#5eead4",
+        "note": "2099 synthetic 最新值"
+      }
+    ]
+  },
+  "section_updates": {
+    "analysis": [
+      {
+        "date": "2099-12-31",
+        "cat": "產業",
+        "text": "Synthetic 自動更新事件。",
+        "url": "https://example.com/updates/industry",
+        "source": "Example Official Feed",
+        "future_event_field": 123
+      }
+    ],
+    "arrchart": []
+  },
+  "automation": {
+    "last_checked": "2099-12-31T07:00+08:00",
+    "seen_urls": [
+      "https://example.com/news/model"
+    ]
+  },
+  "future_root_field": {
+    "unknown": "validator must preserve this object"
+  }
+}

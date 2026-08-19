@@ -11,7 +11,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verify_build import BuildVerificationError, extract_index_payload, verify_build
+from verify_build import (
+    BuildVerificationError,
+    decrypt_payload,
+    extract_index_payload,
+    verify_build,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -101,6 +106,38 @@ class EncryptedBuildTests(unittest.TestCase):
             restored = json.load(handle)
         self.assertEqual(self.fixture_data, restored)
         self.assertIn("future_root_field", restored)
+
+    def test_deep_dive_metrics_and_caveats_are_rendered(self) -> None:
+        index_text = (self.work / "index.html").read_text(encoding="utf-8")
+        payload = extract_index_payload(index_text)
+        rendered = decrypt_payload(payload, PASSWORD, label="fixture index").decode(
+            "utf-8"
+        )
+
+        for expected in (
+            "2.17x",
+            "以 650 億下限",
+            "-40 億",
+            "170 億/月",
+            "≈90 億/月",
+            "≈-53.3 億/月²",
+            "二階導示意代理",
+            "Claude Opus 5",
+            "Claude Fable 5",
+            "Grok 4.6",
+            "Kimi K3",
+            "GPT-5.6 Sol",
+            "Claude Code",
+            "OpenAI Codex",
+            "-24.8%",
+            "Anthropic 放緩不等於 AI 總需求放緩，支出可能轉往 GPU／推理託管／網路／儲存／運維。",
+            "媒體報導",
+            "第三方估算",
+            "第三方樣本",
+            "第三方評測",
+        ):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, rendered)
 
     def test_wrong_password_does_not_overwrite_existing_plaintext(self) -> None:
         sentinel = b'{"sentinel":"keep exactly"}\n'

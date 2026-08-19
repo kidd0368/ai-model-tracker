@@ -77,6 +77,19 @@ Secret 只能新增／覆寫，GitHub 不會顯示既有值。本專案不需要
 
 來源必須達到 `sources.json` 設定的健康門檻才允許寫入。單一來源失敗只會記錄警告；健康來源不足則整輪停止，不會清空或重建既有資料。Feed 內容一律視為不可信輸入，下載大小、URL scheme、模型輸出路徑與欄位都有限制。
 
+### 深度研究資料與來源分級
+
+結構化研究欄位另外保留 `source_type`，前端以不同標籤呈現，避免把不同可信度與定義的數字混在一起：
+
+- `company_disclosure`：公司新聞稿或直接披露。
+- `media_report`：媒體取得的投資人資料或知情人士口徑，不等於公司公告。
+- `third_party_estimate`：替代數據、追蹤或市場預期。
+- `third_party_sample`：單一平台／gateway 樣本，不外推為全球市佔。
+- `third_party_benchmark`：獨立評測與任務成本。
+- `attachment_synthesis`：研究附件的跨來源整理。
+
+Anthropic 專題資料位於 `arr_series.expectation_comparison`、`arr_series.momentum`、`revenue.monetization` 與 `revenue.product_comparison`。其中 ARR 動能由觀測點即時計算區間增量、月均新增與二階導代理；若原始值是約數或下限，前端會明確標記為「門檻值代入的示意代理」。兩個下限相減不構成真實增量的上界或下界，實際斜率與二階導仍不可確定。
+
 ### 金十數據 MCP 的狀態
 
 2026-08-15 的「接入金十數據即時快訊」commit 只替換了 `data.enc` 與 `index.html`，repo 中從未留下 MCP client、API 設定、資料擷取器或 schedule，因此那是一次工作階段中的人工資料更新，不是可重跑的整合。

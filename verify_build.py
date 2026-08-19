@@ -140,6 +140,10 @@ def _data_payload(path: str) -> dict[str, Any]:
     return payload
 
 
+def _compact_number(value: int | float, digits: int = 1) -> str:
+    return f"{value:.{digits}f}".rstrip("0").rstrip(".")
+
+
 def _known_visible_values(data: dict[str, Any]) -> Iterable[Any]:
     """Yield source values that the current renderer must expose after decrypting."""
 
@@ -159,9 +163,41 @@ def _known_visible_values(data: dict[str, Any]) -> Iterable[Any]:
     yield cost["alphasense"]["desc"]
     for row in cost["alphasense"]["rows"]:
         yield from (row["model"], row["maker"], row["type"], row["quality"], row["cost"])
-    yield cost["aa"]["desc"]
-    for row in cost["aa"]["rows"]:
-        yield from (row["model"], row["ii"], row["cost"])
+    aa = cost["aa"]
+    yield aa["desc"]
+    for field in ("as_of", "source"):
+        if aa.get(field):
+            yield aa[field]
+    numeric_costs = [
+        row.get("cost_usd") for row in aa["rows"] if row.get("cost_usd") is not None
+    ]
+    numeric_scores = [
+        row.get("ii_value") for row in aa["rows"] if row.get("ii_value") is not None
+    ]
+    fable_cost = next(
+        (
+            row["cost_usd"]
+            for row in aa["rows"]
+            if "Fable" in row["model"] and row.get("cost_usd") is not None
+        ),
+        None,
+    )
+    numeric_renderer = (
+        len(numeric_costs) == len(aa["rows"])
+        and len(numeric_scores) == len(aa["rows"])
+        and bool(fable_cost)
+        and all("note" in row for row in aa["rows"])
+    )
+    for row in aa["rows"]:
+        yield row["model"]
+        if numeric_renderer:
+            yield from (
+                _compact_number(row["ii_value"]),
+                f'US${_compact_number(row["cost_usd"], 2)}',
+                row["note"],
+            )
+        else:
+            yield from (row["ii"], row["cost"])
     for row in cost["pricing"]:
         yield from (row["model"], row["input"], row["output"], row["note"])
     yield from cost["insights"]
@@ -178,6 +214,51 @@ def _known_visible_values(data: dict[str, Any]) -> Iterable[Any]:
         )
     yield revenue["gemini_note"]
     yield from revenue["observations"]
+    monetization = revenue.get("monetization")
+    if monetization:
+        yield from (
+            monetization["title"],
+            monetization["as_of"],
+            monetization["sample"],
+            monetization["source"],
+            monetization["note"],
+        )
+        for row in monetization["rows"]:
+            yield from (
+                row["company"],
+                f'{_compact_number(row["token_share_pct"])}%',
+                f'{_compact_number(row["spend_share_pct"])}%',
+            )
+        hero = next(
+            (row for row in monetization["rows"] if row["company"] == "Anthropic"),
+            monetization["rows"][0],
+        )
+        yield f'{hero["spend_share_pct"] / hero["token_share_pct"]:.2f}x'
+    comparison = revenue.get("product_comparison")
+    if comparison:
+        yield from (
+            comparison["title"],
+            comparison["start_as_of"],
+            comparison["as_of"],
+            comparison["source"],
+            comparison["note"],
+            comparison["unit"],
+        )
+        yield from comparison.get("dates", [])
+        for row in comparison["rows"]:
+            yield from (
+                row["product"],
+                row["company"],
+                f'{_compact_number(row["arr_start"])} 億美元',
+                f'{_compact_number(row["arr_latest"])} 億美元',
+            )
+        gap_points = comparison.get("gap_points", [])
+        if len(gap_points) >= 2 and gap_points[0] != 0:
+            yield from (
+                f'{_compact_number(gap_points[0])} 億',
+                f'{_compact_number(gap_points[-1])} 億',
+                f'{(gap_points[-1] / gap_points[0] - 1) * 100:.1f}%',
+            )
 
     compute = data["compute"]
     for card in compute["cards"]:
@@ -216,6 +297,8 @@ def _known_visible_values(data: dict[str, Any]) -> Iterable[Any]:
     yield from interconnect["updates"]
     yield from data["method"]["sources"]
     yield from data["method"]["notes"]
+    for reference in data["method"].get("references", []):
+        yield from (reference["label"], reference["publisher"], reference["note"])
 
     arr = data.get("arr_series")
     if arr:
@@ -227,6 +310,35 @@ def _known_visible_values(data: dict[str, Any]) -> Iterable[Any]:
                     yield point["label"]
         for bar in arr.get("latest_bars", []):
             yield from (bar["name"], bar["note"])
+        expectation = arr.get("expectation_comparison")
+        if expectation:
+            yield from (
+                expectation["title"],
+                expectation["as_of"],
+                expectation["note"],
+            )
+            latest = expectation["latest"]
+            latest_display = str(latest["display"]).strip()
+            if not any(unit in latest_display for unit in ("億", "美元", "US$")):
+                latest_display += " 億美元"
+            yield from (
+                latest["label"],
+                latest["source"],
+                latest["note"],
+                latest_display,
+            )
+            for row in expectation["expectations"]:
+                yield from (
+                    row["label"],
+                    row["as_of"],
+                    row["source"],
+                    f'{_compact_number(row["value"])} 億美元',
+                )
+        momentum = arr.get("momentum")
+        if momentum:
+            yield from (momentum["title"], momentum["note"], momentum["source"])
+            for point in momentum["points"]:
+                yield from (point["d"], point["label"], point["source"])
 
     for events in data.get("section_updates", {}).values():
         for event in events:

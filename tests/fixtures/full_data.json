@@ -11,7 +11,8 @@
   "analysis": {
     "headline": "Synthetic 總評 & 驗證",
     "paragraphs": [
-      "這是一段只供自動測試使用的完整總評。"
+      "這是一段只供自動測試使用的完整總評。",
+      "Anthropic 放緩不等於 AI 總需求放緩，支出可能轉往 GPU／推理託管／網路／儲存／運維。"
     ]
   },
   "daily_log": [
@@ -43,11 +44,49 @@
     },
     "aa": {
       "desc": "Synthetic Artificial Analysis 測試說明。",
+      "as_of": "2099-12",
+      "source": "Synthetic Benchmark",
+      "source_type": "third_party_benchmark",
       "rows": [
         {
-          "model": "Synthetic Model B",
-          "ii": "50",
-          "cost": "US$0.08／任務"
+          "model": "Claude Opus 5",
+          "ii": "63",
+          "cost": "US$1.00／任務",
+          "ii_value": 63,
+          "cost_usd": 1.0,
+          "note": "Synthetic benchmark value"
+        },
+        {
+          "model": "Claude Fable 5",
+          "ii": "62",
+          "cost": "US$1.20／任務",
+          "ii_value": 62,
+          "cost_usd": 1.2,
+          "note": "Synthetic benchmark value"
+        },
+        {
+          "model": "Grok 4.6",
+          "ii": "61",
+          "cost": "US$0.32／任務",
+          "ii_value": 61,
+          "cost_usd": 0.32,
+          "note": "Synthetic benchmark value"
+        },
+        {
+          "model": "Kimi K3",
+          "ii": "60",
+          "cost": "US$0.32／任務",
+          "ii_value": 60,
+          "cost_usd": 0.32,
+          "note": "Synthetic benchmark value"
+        },
+        {
+          "model": "GPT-5.6 Sol",
+          "ii": "59",
+          "cost": "US$0.40／任務",
+          "ii_value": 59,
+          "cost_usd": 0.4,
+          "note": "Synthetic benchmark value"
         }
       ]
     },
@@ -77,7 +116,54 @@
     "gemini_note": "Synthetic 說明：此處不代表任何真實公司資料。",
     "observations": [
       "Synthetic 觀察：所有數字均為測試值。"
-    ]
+    ],
+    "monetization": {
+      "title": "Token share vs Spend share",
+      "as_of": "2099-12",
+      "sample": "Synthetic Gateway sample",
+      "source": "Synthetic Gateway",
+      "source_type": "third_party_sample",
+      "url": "https://example.com/samples/gateway",
+      "note": "Monetization Premium = Spend Share ÷ Token Share。",
+      "rows": [
+        {
+          "company": "Anthropic",
+          "token_share_pct": 30.0,
+          "spend_share_pct": 65.1,
+          "coding_agent_spend_share_pct": 80.0,
+          "coding_agent_qualifier": ">"
+        }
+      ]
+    },
+    "product_comparison": {
+      "title": "Claude Code vs OpenAI Codex",
+      "start_as_of": "2099-01-01",
+      "as_of": "2099-01-08",
+      "source": "Synthetic product ARR comparison",
+      "source_type": "attachment_synthesis",
+      "note": "Synthetic values validate ARR and recent growth-slope rendering only。",
+      "unit": "億美元 ARR",
+      "rows": [
+        {
+          "product": "Claude Code",
+          "company": "Anthropic",
+          "arr_start": 100,
+          "arr_latest": 120,
+          "latest_week_delta": 20,
+          "points": [100, 120]
+        },
+        {
+          "product": "OpenAI Codex",
+          "company": "OpenAI",
+          "arr_start": 50,
+          "arr_latest": 82.4,
+          "latest_week_delta": 32.4,
+          "points": [50, 82.4]
+        }
+      ],
+      "gap_points": [50, 37.6],
+      "dates": ["2099-01-01", "2099-01-08"]
+    }
   },
   "compute": {
     "cards": [
@@ -132,6 +218,21 @@
     ],
     "notes": [
       "Synthetic fixture 僅用於測試，不可作為事實來源。"
+    ],
+    "references": [
+      {
+        "label": "Synthetic company disclosure",
+        "publisher": "Example Labs",
+        "source_type": "company_disclosure",
+        "note": "用於驗證公司披露來源標籤。",
+        "url": "https://example.com/disclosure"
+      },
+      {
+        "label": "Synthetic attachment synthesis",
+        "publisher": "Example Research",
+        "source_type": "attachment_synthesis",
+        "note": "用於驗證無連結的附件綜整來源。"
+      }
     ]
   },
   "arr_series": {
@@ -178,7 +279,77 @@
         "color": "#5eead4",
         "note": "2099 synthetic 最新值"
       }
-    ]
+    ],
+    "expectation_comparison": {
+      "title": "Anthropic 最新 ARR 與市場預期",
+      "as_of": "2099-07",
+      "note": "Synthetic comparison preserves media-report and third-party-estimate distinctions。",
+      "latest": {
+        "label": "最新媒體口徑",
+        "display": ">650",
+        "qualifier": ">",
+        "value": 650,
+        "source_type": "media_report",
+        "source": "Synthetic Media",
+        "url": "https://example.com/media/anthropic-arr",
+        "note": "下限值，不是公司官方精確披露。"
+      },
+      "expectations": [
+        {
+          "label": "Yipit 預期",
+          "as_of": "2099-07",
+          "value": 690,
+          "source_type": "third_party_estimate",
+          "source": "Yipit",
+          "url": "https://example.com/estimates/yipit"
+        },
+        {
+          "label": "TickerTrends 預期",
+          "as_of": "2099-07",
+          "value": 743,
+          "source_type": "third_party_estimate",
+          "source": "TickerTrends",
+          "url": "https://example.com/estimates/tickertrends"
+        }
+      ]
+    },
+    "momentum": {
+      "title": "Anthropic ARR 增速與二階導",
+      "note": "Synthetic points validate period growth, monthly ARR addition, and acceleration calculations。",
+      "source": "Synthetic attachment timeline",
+      "source_type": "attachment_synthesis",
+      "points": [
+        {
+          "d": "2099-02",
+          "v": 140,
+          "label": "2099-02 ARR 140 億美元",
+          "source": "Synthetic Media",
+          "source_type": "media_report"
+        },
+        {
+          "d": "2099-04",
+          "v": 300,
+          "label": "2099-04 ARR 300 億美元",
+          "source": "Synthetic Media",
+          "source_type": "media_report"
+        },
+        {
+          "d": "2099-05",
+          "v": 470,
+          "label": "2099-05 ARR 470 億美元",
+          "source": "Synthetic Media",
+          "source_type": "media_report"
+        },
+        {
+          "d": "2099-07",
+          "v": 650,
+          "label": "2099-07 ARR >650 億美元",
+          "source": "Synthetic Media",
+          "source_type": "media_report",
+          "qualifier": ">"
+        }
+      ]
+    }
   },
   "section_updates": {
     "analysis": [

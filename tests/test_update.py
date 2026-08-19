@@ -59,6 +59,17 @@ class UpdateTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_update_is_additive_source_backed_and_deduplicated(self) -> None:
+        original = json.loads(self.data_path.read_text(encoding="utf-8"))
+        deep_dive_before = {
+            "expectation_comparison": original["arr_series"][
+                "expectation_comparison"
+            ],
+            "momentum": original["arr_series"]["momentum"],
+            "aa": original["cost"]["aa"],
+            "monetization": original["revenue"]["monetization"],
+            "product_comparison": original["revenue"]["product_comparison"],
+            "references": original["method"]["references"],
+        }
         with mock.patch("update.fetch_bytes", return_value=RSS), mock.patch.dict(
             os.environ,
             {
@@ -86,6 +97,19 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual("2026-08-18 07:00（台北）", data["meta"]["last_checked"])
         self.assertTrue(
             any(event["url"] == canonical for event in data["section_updates"]["cost"])
+        )
+        self.assertEqual(
+            deep_dive_before,
+            {
+                "expectation_comparison": data["arr_series"][
+                    "expectation_comparison"
+                ],
+                "momentum": data["arr_series"]["momentum"],
+                "aa": data["cost"]["aa"],
+                "monetization": data["revenue"]["monetization"],
+                "product_comparison": data["revenue"]["product_comparison"],
+                "references": data["method"]["references"],
+            },
         )
 
     def test_source_quorum_failure_does_not_touch_data(self) -> None:

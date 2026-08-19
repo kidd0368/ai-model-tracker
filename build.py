@@ -72,6 +72,169 @@ def table(headers, rows_html):
     th = "".join(f"<th>{esc(h)}</th>" for h in headers)
     return f'<div class="tablewrap"><table><thead><tr>{th}</tr></thead><tbody>{rows_html}</tbody></table></div>'
 
+SOURCE_TYPE_LABELS = {
+    "company_disclosure": "公司披露",
+    "media_report": "媒體報導",
+    "third_party_estimate": "第三方估算",
+    "third_party_sample": "第三方樣本",
+    "third_party_benchmark": "第三方評測",
+    "attachment_synthesis": "附件綜合整理",
+}
+
+def fmt_number(value, digits=1):
+    rendered = f"{value:.{digits}f}"
+    if digits == 0:
+        return rendered
+    return rendered.rstrip("0").rstrip(".")
+
+def fmt_signed(value, digits=1):
+    prefix = "+" if value > 0 else ""
+    return prefix + fmt_number(value, digits)
+
+def arr_display_with_unit(display):
+    rendered = str(display).strip()
+    if any(unit in rendered for unit in ("億", "美元", "US$")):
+        return rendered
+    return f"{rendered} 億美元"
+
+def arr_currency_display(display):
+    rendered = str(display).strip()
+    for qualifier in (">=", "<=", ">", "<", "≥", "≤", "≈", "~"):
+        if rendered.startswith(qualifier):
+            return f"{qualifier}${rendered[len(qualifier):]}億"
+    return f"${rendered}億"
+
+def source_badge(source_type):
+    label = SOURCE_TYPE_LABELS.get(source_type, source_type)
+    css_class = str(source_type).replace("_", "-")
+    return f'<span class="source-badge {html.escape(css_class, quote=True)}">{esc(label)}</span>'
+
+def source_link(source, url=None):
+    label = esc(source)
+    if not url:
+        return label
+    safe_url = html.escape(url, quote=True)
+    return f'<a href="{safe_url}" target="_blank" rel="noopener">{label}↗</a>'
+
+def month_index(month):
+    year, month_number = map(int, month.split("-"))
+    return year * 12 + month_number
+
+def render_arr_expectations():
+    comparison = D.get("arr_series", {}).get("expectation_comparison")
+    if not comparison:
+        return ""
+    latest = comparison["latest"]
+    latest_value = latest["value"]
+    latest_display = latest.get("display") or f'{latest.get("qualifier", "")}{fmt_number(latest_value)}'
+    rows = [
+        f'<tr><td><b>{esc(latest["label"])}</b><small>{esc(comparison["as_of"])}</small></td>'
+        f'<td class="num"><b>{esc(arr_display_with_unit(latest_display))}</b></td>'
+        f'<td>{source_badge(latest["source_type"])} {source_link(latest["source"], latest.get("url"))}</td>'
+        f'<td>{esc(latest["note"])}</td></tr>'
+    ]
+    for expectation in comparison["expectations"]:
+        gap = latest_value - expectation["value"]
+        gap_pct = gap / expectation["value"] * 100
+        rows.append(
+            f'<tr><td><b>{esc(expectation["label"])}</b><small>{esc(expectation["as_of"])}</small></td>'
+            f'<td class="num">{fmt_number(expectation["value"])} 億美元</td>'
+            f'<td>{source_badge(expectation["source_type"])} '
+            f'{source_link(expectation["source"], expectation.get("url"))}</td>'
+            f'<td class="num">以 {fmt_number(latest_value)} 億下限：{fmt_number(gap, 0)} 億 '
+            f'（{gap_pct:.1f}%）</td></tr>'
+        )
+    return (
+        f'<div class="card"><h3>{esc(comparison["title"])}</h3>'
+        + table(["口徑", "ARR / run-rate", "來源層級", "與最新報導下限比較"], "".join(rows))
+        + f'<p class="desc calc-note">{esc(comparison["note"])}</p></div>'
+    )
+
+def render_arr_momentum():
+    momentum = D.get("arr_series", {}).get("momentum")
+    if not momentum:
+        return ""
+    points = momentum["points"]
+    rows = []
+    intervals = []
+    for index, point in enumerate(points):
+        display = f'{point.get("qualifier", "")}{fmt_number(point["v"], 2)}'
+        if index == 0:
+            rows.append(
+                f'<tr><td>{esc(point["d"])}<small>{esc(point["label"])}</small></td>'
+                f'<td class="num"><b>{esc(display)} 億</b></td>'
+                '<td colspan="6" class="muted-cell">起始觀測</td>'
+                f'<td>{source_badge(point["source_type"])} {esc(point["source"])}</td></tr>'
+            )
+            continue
+        previous = points[index - 1]
+        months = month_index(point["d"]) - month_index(previous["d"])
+        delta = point["v"] - previous["v"]
+        slope = delta / months
+        period_growth = (point["v"] / previous["v"] - 1) * 100
+        monthly_growth = ((point["v"] / previous["v"]) ** (1 / months) - 1) * 100
+        acceleration = None
+        interval_is_proxy = bool(point.get("qualifier") or previous.get("qualifier"))
+        if intervals:
+            prior = intervals[-1]
+            midpoint_months = (months + prior["months"]) / 2
+            acceleration = (slope - prior["slope"]) / midpoint_months
+        intervals.append({
+            "months": months,
+            "slope": slope,
+            "acceleration": acceleration,
+            "is_proxy": interval_is_proxy,
+        })
+        proxy = "≈" if interval_is_proxy else ""
+        acceleration_is_proxy = interval_is_proxy or bool(intervals[-2]["is_proxy"] if len(intervals) > 1 else False)
+        acceleration_prefix = "≈" if acceleration_is_proxy else ""
+        acceleration_text = "—" if acceleration is None else f'{acceleration_prefix}{fmt_number(acceleration)} 億/月²'
+        rows.append(
+            f'<tr><td>{esc(point["d"])}<small>{esc(point["label"])}</small></td>'
+            f'<td class="num"><b>{esc(display)} 億</b></td>'
+            f'<td class="num">{months}</td><td class="num">{proxy}{fmt_number(delta)} 億</td>'
+            f'<td class="num">{proxy}{fmt_number(slope)} 億/月</td>'
+            f'<td class="num">{proxy}{period_growth:.1f}%</td>'
+            f'<td class="num">{proxy}{monthly_growth:.1f}%</td>'
+            f'<td class="num">{esc(acceleration_text)}</td>'
+            f'<td>{source_badge(point["source_type"])} {esc(point["source"])}</td></tr>'
+        )
+    latest_interval = intervals[-1]
+    prior_interval = intervals[-2] if len(intervals) > 1 else None
+    latest_point = points[-1]
+    latest_display = f'{latest_point.get("qualifier", "")}{fmt_number(latest_point["v"], 2)} 億'
+    latest_acceleration = latest_interval["acceleration"]
+    prior_slope_display = (
+        "—"
+        if prior_interval is None
+        else f'{"≈" if prior_interval["is_proxy"] else ""}{fmt_number(prior_interval["slope"])} 億/月'
+    )
+    recent_prefix = "≈" if latest_interval["is_proxy"] else ""
+    acceleration_is_proxy = latest_interval["is_proxy"] or bool(prior_interval and prior_interval["is_proxy"])
+    acceleration_prefix = "≈" if acceleration_is_proxy else ""
+    acceleration_display = "—" if latest_acceleration is None else f'{acceleration_prefix}{fmt_number(latest_acceleration)} 億/月²'
+    metrics = (
+        '<div class="metric-grid">'
+        f'<div class="metric"><span>最新 run-rate</span><strong>{esc(latest_display)}</strong></div>'
+        f'<div class="metric"><span>前段門檻代理</span><strong>{esc(prior_slope_display)}</strong></div>'
+        f'<div class="metric"><span>近期門檻代理</span><strong>{recent_prefix}{fmt_number(latest_interval["slope"])} 億/月</strong></div>'
+        f'<div class="metric"><span>二階導示意代理</span><strong>{esc(acceleration_display)}</strong></div>'
+        '</div>'
+    )
+    return (
+        f'<div class="card"><h3>{esc(momentum["title"])}</h3>{metrics}'
+        f'<p class="desc">{esc(momentum["note"])}</p>'
+        + table(
+            ["觀測月", "ARR", "間隔月", "區間增量", "月均新增（一階導）", "期間成長", "月複合增速", "加速度代理（二階導）", "來源"],
+            "".join(rows),
+        )
+        + f'<p class="desc calc-note">計算式：一階導＝ARR 增量÷間隔月；二階導代理＝相鄰一階導之差÷兩段間隔月數平均。'
+        f'「≈」代表把報導下限門檻或約數代入的示意情境；兩個下限相減不構成真實增量的上界或下界。'
+        f'最新值是「{esc(latest_display)}」下限，實際斜率與二階導無法由附件確定。'
+        f'這是可能的放緩拐點，不是已確認的需求反轉。'
+        f' 資料整理：{source_badge(momentum["source_type"])} {esc(momentum["source"])}</p></div>'
+    )
+
 def render_cost():
     a = D["cost"]["alphasense"]
     a_rows = "".join(
@@ -80,10 +243,31 @@ def render_cost():
         for r in a["rows"]
     )
     aa = D["cost"]["aa"]
-    aa_rows = "".join(
-        f'<tr><td><b>{esc(r["model"])}</b></td><td class="num">{esc(r["ii"])}</td><td>{esc(r["cost"])}</td></tr>'
-        for r in aa["rows"]
+    numeric_costs = [r.get("cost_usd") for r in aa["rows"] if r.get("cost_usd") is not None]
+    numeric_scores = [r.get("ii_value") for r in aa["rows"] if r.get("ii_value") is not None]
+    fable = next(
+        (r["cost_usd"] for r in aa["rows"] if "Fable" in r["model"] and r.get("cost_usd") is not None),
+        None,
     )
+    if (
+        len(numeric_costs) == len(aa["rows"])
+        and len(numeric_scores) == len(aa["rows"])
+        and fable
+        and all("note" in r for r in aa["rows"])
+    ):
+        aa_rows = "".join(
+            f'<tr><td><b>{esc(r["model"])}</b></td><td class="num">{fmt_number(r["ii_value"])}</td>'
+            f'<td class="num">US${fmt_number(r["cost_usd"], 2)}</td>'
+            f'<td class="num">{r["cost_usd"] / fable * 100:.0f}%</td><td>{esc(r["note"])}</td></tr>'
+            for r in aa["rows"]
+        )
+        aa_table = table(["模型", "智力指數", "每任務成本", "Fable＝100", "判讀"], aa_rows)
+    else:
+        aa_rows = "".join(
+            f'<tr><td><b>{esc(r["model"])}</b></td><td class="num">{esc(r["ii"])}</td><td>{esc(r["cost"])}</td></tr>'
+            for r in aa["rows"]
+        )
+        aa_table = table(["模型", "智力指數", "每任務成本"], aa_rows)
     p_rows = "".join(
         f'<tr><td><b>{esc(r["model"])}</b></td><td class="num">{esc(r["input"])}</td>'
         f'<td class="num">{esc(r["output"])}</td><td>{esc(r["note"])}</td></tr>'
@@ -94,11 +278,110 @@ def render_cost():
         f'<p class="intro">{esc(D["cost"]["intro"])}</p>'
         f'<div class="card"><h3>AlphaSense 實測（金融分析 245 題）</h3><p class="desc">{esc(a["desc"])}</p>'
         + table(["模型", "廠商", "類型", "品質分數", "每題成本"], a_rows)
-        + f'</div><div class="card"><h3>Artificial Analysis 每任務成本</h3><p class="desc">{esc(aa["desc"])}</p>'
-        + table(["模型", "智力指數", "每任務成本"], aa_rows)
+        + f'</div><div class="card"><h3>模型能力 vs 任務成本</h3><p class="desc">{esc(aa["desc"])} '
+        + source_badge(aa.get("source_type", "third_party_benchmark"))
+        + f' {esc(aa.get("source", ""))}｜快照：{esc(aa.get("as_of", ""))}</p>'
+        + aa_table
         + '</div><div class="card"><h3>API 定價現況（美元／百萬 token）</h3>'
         + table(["模型", "輸入", "輸出", "備註"], p_rows)
         + f'</div><div class="card insight"><h3>關鍵洞察</h3><ul>{insights}</ul></div>'
+    )
+
+def render_monetization():
+    item = D.get("revenue", {}).get("monetization")
+    if not item:
+        return ""
+    rows = []
+    for row in item["rows"]:
+        premium = row["spend_share_pct"] / row["token_share_pct"]
+        coding_share = "—"
+        if row.get("coding_agent_spend_share_pct") is not None:
+            coding_share = f'{row.get("coding_agent_qualifier", "")}{fmt_number(row["coding_agent_spend_share_pct"])}%'
+        rows.append(
+            f'<tr><td><b>{esc(row["company"])}</b></td>'
+            f'<td class="num">{fmt_number(row["token_share_pct"])}%</td>'
+            f'<td class="num">{fmt_number(row["spend_share_pct"])}%</td>'
+            f'<td class="num"><b>{premium:.2f}x</b></td><td class="num">{esc(coding_share)}</td></tr>'
+        )
+    hero = next(
+        (row for row in item["rows"] if row["company"] == "Anthropic"),
+        item["rows"][0],
+    )
+    hero_premium = hero["spend_share_pct"] / hero["token_share_pct"]
+    hero_coding = "—"
+    if hero.get("coding_agent_spend_share_pct") is not None:
+        hero_coding = f'{hero.get("coding_agent_qualifier", "")}{fmt_number(hero["coding_agent_spend_share_pct"])}%'
+    metrics = (
+        '<div class="metric-grid">'
+        f'<div class="metric"><span>Token share</span><strong>{fmt_number(hero["token_share_pct"])}%</strong></div>'
+        f'<div class="metric"><span>Spend share</span><strong>{fmt_number(hero["spend_share_pct"])}%</strong></div>'
+        f'<div class="metric"><span>Monetization Premium</span><strong>{hero_premium:.2f}x</strong></div>'
+        f'<div class="metric"><span>Coding agents 支出</span><strong>{esc(hero_coding)}</strong></div>'
+        '</div>'
+    )
+    return (
+        f'<div class="card"><h3>{esc(item["title"])}</h3>{metrics}'
+        f'<p class="desc">Monetization Premium＝Spend Share÷Token Share。{esc(item["note"])}</p>'
+        + table(["公司", "Token share", "Spend share", "變現溢價", "Coding agents 支出份額"], "".join(rows))
+        + f'<p class="desc calc-note">樣本：{esc(item["sample"])}｜{source_badge(item["source_type"])} '
+        f'{source_link(item["source"], item.get("url"))}｜{esc(item["as_of"])}</p></div>'
+    )
+
+def render_product_comparison():
+    comparison = D.get("revenue", {}).get("product_comparison")
+    if not comparison:
+        return ""
+    rows = []
+    for row in comparison["rows"]:
+        delta = row["arr_latest"] - row["arr_start"]
+        growth = delta / row["arr_start"] * 100
+        latest_week = row.get("latest_week_delta")
+        if latest_week is None and len(row.get("points", [])) >= 2:
+            latest_week = row["points"][-1] - row["points"][-2]
+        latest_week_display = "—" if latest_week is None else f'{fmt_signed(latest_week)} 億美元'
+        rows.append(
+            f'<tr><td><b>{esc(row["product"])}</b><small>{esc(row["company"])}</small></td>'
+            f'<td class="num">{fmt_number(row["arr_start"])} 億美元</td>'
+            f'<td class="num">{fmt_number(row["arr_latest"])} 億美元</td>'
+            f'<td class="num">{fmt_signed(delta)} 億美元</td><td class="num"><b>{fmt_signed(growth)}%</b></td>'
+            f'<td class="num">{esc(latest_week_display)}</td></tr>'
+        )
+    first, second = comparison["rows"][:2]
+    latest_ratio = first["arr_latest"] / second["arr_latest"]
+    gap_points = comparison.get("gap_points", [])
+    has_reported_gaps = len(gap_points) >= 2
+    start_gap = gap_points[0] if has_reported_gaps else first["arr_start"] - second["arr_start"]
+    latest_gap = gap_points[-1] if has_reported_gaps else first["arr_latest"] - second["arr_latest"]
+    gap_change = None if start_gap == 0 else (latest_gap / start_gap - 1) * 100
+    gap_change_display = "—" if gap_change is None else f'{gap_change:.1f}%'
+    metrics = (
+        '<div class="metric-grid">'
+        f'<div class="metric"><span>最新規模比</span><strong>{latest_ratio:.2f}x</strong></div>'
+        f'<div class="metric"><span>期初差距</span><strong>{fmt_number(start_gap)} 億</strong></div>'
+        f'<div class="metric"><span>最新差距</span><strong>{fmt_number(latest_gap)} 億</strong></div>'
+        f'<div class="metric"><span>差距變化</span><strong>{esc(gap_change_display)}</strong></div>'
+        '</div>'
+    )
+    weekly_table = ""
+    dates = comparison.get("dates", [])
+    if dates and all(len(row.get("points", [])) == len(dates) for row in comparison["rows"][:2]):
+        use_reported_gaps = len(gap_points) == len(dates)
+        weekly_rows = "".join(
+            f'<tr><td>{esc(date)}</td><td class="num">{fmt_number(first["points"][index])} 億</td>'
+            f'<td class="num">{fmt_number(second["points"][index])} 億</td>'
+            f'<td class="num">{fmt_number(gap_points[index] if use_reported_gaps else first["points"][index] - second["points"][index])} 億</td></tr>'
+            for index, date in enumerate(dates)
+        )
+        weekly_table = '<p class="desc"><b>每週追蹤序列</b></p>' + table(
+            ["週別", first["product"], second["product"], "差距"], weekly_rows
+        )
+    return (
+        f'<div class="card"><h3>{esc(comparison["title"])}</h3>{metrics}'
+        + table(["產品", comparison["start_as_of"], comparison["as_of"], "ARR 增量", "全視窗增長", "最近一週增量"], "".join(rows))
+        + weekly_table
+        + f'<p class="desc">{esc(comparison["note"])}</p>'
+        f'<p class="desc calc-note">{source_badge(comparison["source_type"])} '
+        f'{source_link(comparison["source"], comparison.get("url"))}｜單位：{esc(comparison["unit"])}</p></div>'
     )
 
 def render_revenue():
@@ -110,6 +393,8 @@ def render_revenue():
     obs = "".join(f"<li>{esc(t)}</li>" for t in D["revenue"]["observations"])
     return (
         table(["公司", "最新 ARR", "成長軌跡", "獲利能力", "估值", "營收結構"], rows)
+        + render_monetization()
+        + render_product_comparison()
         + f'<div class="card note"><h3>為什麼 Gemini 的 ARR 拆不出來</h3><p>{esc(D["revenue"]["gemini_note"])}</p></div>'
         + f'<div class="card insight"><h3>觀察</h3><ul>{obs}</ul></div>'
     )
@@ -156,7 +441,25 @@ def render_interconnect():
 def render_method():
     src = "、".join(esc(s) for s in D["method"]["sources"])
     notes = "".join(f"<li>{esc(t)}</li>" for t in D["method"]["notes"])
-    return f'<div class="card"><h3>資料來源</h3><p>{src}</p><h3>方法與免責</h3><ul>{notes}</ul></div>'
+    references = D["method"].get("references", [])
+    ref_rows = "".join(
+        f'<tr><td><b>{esc(r["label"])}</b></td><td>{esc(r["publisher"])}</td>'
+        f'<td>{source_badge(r["source_type"])}</td><td>{esc(r["note"])}</td>'
+        f'<td>{source_link("查看", r.get("url")) if r.get("url") else "—"}</td></tr>'
+        for r in references
+    )
+    ref_card = ""
+    if ref_rows:
+        ref_card = (
+            '<div class="card"><h3>本期來源口徑表</h3>'
+            '<p class="desc">公司披露、媒體取得的投資人資料、第三方估算、樣本與評測分層呈現；第三方資料不視為公司官方數字。</p>'
+            + table(["資料", "發布／追蹤者", "層級", "口徑說明", "連結"], ref_rows)
+            + '</div>'
+        )
+    return (
+        f'<div class="card"><h3>資料來源</h3><p>{src}</p><h3>方法與免責</h3><ul>{notes}</ul></div>'
+        + ref_card
+    )
 
 def render_arr_chart():
     A = D.get("arr_series")
@@ -188,7 +491,8 @@ def render_arr_chart():
         for x, y, p in pts:
             P.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4.2" fill="{col}"><title>{esc(p["label"])}</title></circle>')
         lx, ly, lp = pts[-1]
-        P.append(f'<text x="{lx-6:.1f}" y="{ly-12:.1f}" fill="{col}" font-size="13" font-weight="700" text-anchor="end">{esc(c["name"])} ${lp["v"]}億</text>')
+        latest_display = lp.get("display") or f'{lp.get("qualifier", "")}{lp["v"]}'
+        P.append(f'<text x="{lx-6:.1f}" y="{ly-12:.1f}" fill="{col}" font-size="13" font-weight="700" text-anchor="end">{esc(c["name"])} {esc(arr_currency_display(latest_display))}</text>')
         for e in c.get("estimates", []):
             ex, ey = xp(e["d"]), yp(e["v"])
             P.append(f'<circle cx="{ex:.1f}" cy="{ey:.1f}" r="4.5" fill="#0b1020" stroke="{col}" stroke-width="2"><title>{esc(e["label"])}</title></circle>')
@@ -219,9 +523,10 @@ def render_arr_bars():
     y = 8
     for r in rows:
         w = bw(r["v"])
+        value_display = r.get("display") or f'{r.get("qualifier", "")}{r["v"]}'
         P.append(f'<text x="142" y="{y+15}" fill="#dbe4f5" font-size="13" text-anchor="end">{esc(r["name"])}</text>')
-        P.append(f'<rect x="150" y="{y}" width="{w:.1f}" height="21" rx="4" fill="{r["color"]}" opacity="0.88"><title>{esc(r["name"])}: ${r["v"]}億（{esc(r["note"])}）</title></rect>')
-        P.append(f'<text x="{150+w+8:.1f}" y="{y+15}" fill="#8fa0bf" font-size="12">${r["v"]}億｜{esc(r["note"])}</text>')
+        P.append(f'<rect x="150" y="{y}" width="{w:.1f}" height="21" rx="4" fill="{r["color"]}" opacity="0.88"><title>{esc(r["name"])}: {esc(arr_currency_display(value_display))}（{esc(r["note"])}）</title></rect>')
+        P.append(f'<text x="{150+w+8:.1f}" y="{y+15}" fill="#8fa0bf" font-size="12">{esc(arr_currency_display(value_display))}｜{esc(r["note"])}</text>')
         y += 31
     return f'<svg viewBox="0 0 980 {y+6}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">' + "".join(P) + "</svg>"
 
@@ -264,6 +569,20 @@ tr:hover td {{ background:rgba(94,234,212,.045); }}
 .num {{ white-space:nowrap; }} .nowrap {{ white-space:nowrap; }}
 .tag {{ display:inline-block; background:var(--tag); color:var(--accent); border-radius:6px;
   padding:1px 8px; font-size:12px; margin-right:6px; }}
+.source-badge {{ display:inline-block; border:1px solid #3b4a6e; border-radius:999px; padding:0 8px;
+  margin:1px 5px 1px 0; color:#c4d2ea; background:#1b2440; font-size:11px; white-space:nowrap; }}
+.source-badge.company-disclosure {{ color:#86efac; border-color:#166534; background:rgba(22,101,52,.18); }}
+.source-badge.media-report {{ color:#7dd3fc; border-color:#075985; background:rgba(7,89,133,.18); }}
+.source-badge.third-party-estimate,.source-badge.third-party-sample,.source-badge.third-party-benchmark {{
+  color:#fcd34d; border-color:#854d0e; background:rgba(133,77,14,.16); }}
+.source-badge.attachment-synthesis {{ color:#c4b5fd; border-color:#5b21b6; background:rgba(91,33,182,.16); }}
+.metric-grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px; margin:12px 0 16px; }}
+.metric {{ background:var(--panel2); border:1px solid var(--line); border-radius:10px; padding:11px 13px; }}
+.metric span {{ display:block; color:var(--muted); font-size:11.5px; }}
+.metric strong {{ display:block; color:var(--accent); font-size:19px; margin-top:2px; }}
+.calc-note {{ border-left:3px solid var(--line); padding-left:10px; margin-top:12px; }}
+.muted-cell {{ color:var(--muted); }}
+td small {{ display:block; color:var(--muted); font-size:11.5px; margin-top:2px; }}
 ul.log {{ padding-left:18px; }} ul.log li {{ margin:7px 0; }}
 .auto-update small {{ display:block; color:var(--muted); margin:2px 0 0 2px; font-size:11.5px; }}
 .analysis p {{ background:var(--panel); border:1px solid var(--line); border-left:4px solid var(--accent);
@@ -287,6 +606,8 @@ footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 
 <section id="arrchart"><h2>ARR 走勢圖（單位：億美元，對數刻度）</h2>
 <div class="card"><h3>OpenAI vs Anthropic：年化營收軌跡與前瞻預測</h3><p class="desc">{esc(D["arr_series"]["note"]) if D.get("arr_series") else ""}</p>{render_arr_chart()}</div>
 <div class="card"><h3>各公司最新 ARR 一覽</h3>{render_arr_bars()}<p class="desc">{esc(D["arr_series"]["bars_note"]) if D.get("arr_series") else ""}</p></div>
+{render_arr_expectations()}
+{render_arr_momentum()}
 {render_section_updates("arrchart")}
 </section>
 <section id="log"><h2>每日動態</h2>{render_daily_log()}</section>

@@ -14,7 +14,7 @@ class WorkflowContractTests(unittest.TestCase):
         cls.text = WORKFLOW.read_text(encoding="utf-8")
 
     def test_taipei_schedule_is_explicit(self) -> None:
-        self.assertIn('cron: "0 7 * * *"', self.text)
+        self.assertIn('cron: "15 7 * * *"', self.text)
         self.assertIn('timezone: "Asia/Taipei"', self.text)
 
     def test_secret_and_minimum_job_permissions_are_explicit(self) -> None:

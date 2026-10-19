@@ -4,7 +4,7 @@
 
 ## 每日流程
 
-`.github/workflows/daily-update.yml` 的目標排程是每天 **07:00 Asia/Taipei**：
+`.github/workflows/daily-update.yml` 的目標排程是每天 **07:15 Asia/Taipei**：
 
 1. 以 Actions Secret `SITE_PASSWORD` 解密現有 `data.enc`。
 2. 驗證完整資料 schema；解密或驗證失敗便停止。
@@ -15,7 +15,7 @@
 7. 只允許 stage `data.enc` 與 `index.html`，再由 `github-actions[bot]` commit/push，並記錄成功推送的精確 commit SHA。
 8. 部署鎖定該次已驗證的 commit（一般 push／`deploy-only` 則鎖定觸發時的 SHA），只把全新暫存目錄中的 `index.html` 部署到 Pages；明文 `data.json` 不會進入 commit 或 Pages artifact。
 
-GitHub 排程可能因平台負載稍微延遲，07:00 是目標觸發時間，不是秒級 SLA。排程只會從 default branch 的最新版 workflow 執行。
+GitHub 排程可能因平台負載稍微延遲，07:15 是目標觸發時間，不是秒級 SLA。排程只會從 default branch 的最新版 workflow 執行。
 
 ## 必要設定
 

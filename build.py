@@ -54,7 +54,7 @@ def render_section_updates(section):
     if not events:
         return ""
     items = []
-    for event in events[:20]:
+    for event in events:
         link = ""
         if event.get("url"):
             link = (
@@ -66,7 +66,16 @@ def render_section_updates(section):
             f'<li><span class="tag">{esc(event.get("cat", "產業"))}</span> '
             f'{esc(event["text"])}{link}<small>{esc(event.get("date", ""))}{source}</small></li>'
         )
-    return '<div class="card auto-update"><h3>最新自動更新</h3><ul class="log">' + "".join(items) + "</ul></div>"
+    history = ""
+    if len(items) > 20:
+        history = (
+            f'<details><summary>較早更新（{len(items) - 20} 則）</summary>'
+            '<ul class="log">' + "".join(items[20:]) + "</ul></details>"
+        )
+    return (
+        '<div class="card auto-update"><h3>最新自動更新</h3><ul class="log">'
+        + "".join(items[:20]) + "</ul>" + history + "</div>"
+    )
 
 def table(headers, rows_html):
     th = "".join(f"<th>{esc(h)}</th>" for h in headers)
@@ -618,7 +627,7 @@ footer {{ text-align:center; color:var(--muted); font-size:12.5px; padding:26px 
 <section id="interconnect"><h2>互連架構</h2>{render_interconnect()}{render_section_updates("interconnect")}</section>
 <section id="method"><h2>方法說明</h2>{render_method()}</section>
 </main>
-<footer>AI 模型情報站｜每日 07:00（台北）自動更新｜本站為公開資訊彙整，非投資建議</footer>
+<footer>AI 模型情報站｜每日 07:15（台北）自動更新｜本站為公開資訊彙整，非投資建議</footer>
 </body></html>"""
 
 # ---------- 加密並輸出 ----------
@@ -713,3 +722,4 @@ write_output_pair([
 print("OK: index.html (%d bytes), data.enc (%d bytes)" % (
     os.path.getsize(os.path.join(ROOT, "index.html")),
     os.path.getsize(os.path.join(ROOT, "data.enc"))))
+

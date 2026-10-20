@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import copy
+import html
 import json
 import os
 import shutil
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from verify_build import (
     BuildVerificationError,
+    _verify_rendered_html,
     decrypt_payload,
     extract_index_payload,
     verify_build,
@@ -139,6 +141,40 @@ class EncryptedBuildTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, rendered)
 
+    def test_section_update_history_remains_available_and_verified(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            copy_programs(work, "build.py", "validate_data.py")
+            data = copy.deepcopy(self.fixture_data)
+            events = [
+                {
+                    "date": "2026-10-20",
+                    "cat": "模型",
+                    "text": f"Archived event {number:02d} <&>",
+                    "url": f"https://example.org/archive/{number}",
+                    "source": "Official Feed",
+                }
+                for number in range(60)
+            ]
+            data.setdefault("section_updates", {})["analysis"] = events
+            write_json(work / "data.json", data)
+            result = run_program(work, "build.py", PASSWORD)
+            self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+            verify_build(
+                PASSWORD,
+                data_path=str(work / "data.json"),
+                encrypted_data_path=str(work / "data.enc"),
+                index_path=str(work / "index.html"),
+            )
+            payload = extract_index_payload((work / "index.html").read_text(encoding="utf-8"))
+            rendered = decrypt_payload(payload, PASSWORD, label="history index").decode("utf-8")
+            for number in (19, 20, 59):
+                self.assertIn(html.escape(events[number]["text"], quote=False), rendered)
+            self.assertLess(rendered.index("<details>"), rendered.index("Archived event 20"))
+            oldest = html.escape(events[-1]["text"], quote=False)
+            with self.assertRaisesRegex(BuildVerificationError, "missing rendered value"):
+                _verify_rendered_html(rendered.replace(oldest, ""), data)
+
     def test_wrong_password_does_not_overwrite_existing_plaintext(self) -> None:
         sentinel = b'{"sentinel":"keep exactly"}\n'
         (self.work / "data.json").write_bytes(sentinel)
@@ -184,3 +220,4 @@ class FailureAtomicityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
